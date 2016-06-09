@@ -88,6 +88,8 @@ RUN curl -SLO "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-
 RUN apt-get update
 RUN apt-get -y install -y python python-dev python-distribute python-pip
 
+# Upgrade pip
+RUN  pip install --upgrade pip
 
 # Install httpie, awscli, docker-compose
 RUN pip install --upgrade httpie awscli docker-compose
