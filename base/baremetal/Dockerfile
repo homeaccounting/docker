@@ -9,7 +9,7 @@ ENV LC_ALL en_US.UTF-8
 
 # Base utilities
 RUN apt-get update && apt-get -y upgrade \
-    && apt-get -y -qq install curl, unzip, wget
+    && apt-get -y -qq install curl unzip wget
 
 # Define default command.
 CMD ["bash"]
