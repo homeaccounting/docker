@@ -2,7 +2,7 @@ FROM homeaccounting/base-java8
 
 MAINTAINER Alexander Sidorenko <aleks.sidorenko@gmail.com>
 
-ENV TEAMCITY_VERSION 9.1.7
+ENV TEAMCITY_VERSION 10.0.2
 VOLUME ["/var/lib/teamcity"]
 RUN mkdir -p /var/lib/teamcity \
 	&& groupadd -g 999 teamcity \
