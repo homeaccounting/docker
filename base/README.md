@@ -1,1 +1,1 @@
-The base baremetal docker image for all containerized apps
+The very base image based on `alpine:3.10`
