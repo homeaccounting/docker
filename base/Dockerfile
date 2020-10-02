@@ -1,10 +1,10 @@
-FROM alpine:3.10
+FROM alpine:3.12
 
 LABEL maintainer="Alexander Sidorenko <aleks.sidorenko@gmail.com>" 
 
-RUN apk update && \
-    apk upgrade && \
-    apk add git
+RUN apk update \
+    && apk upgrade \
+    && apk add git
 
 ENV LANG en_US.UTF-8 
 ENV LANGUAGE en_US:en
