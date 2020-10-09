@@ -4,7 +4,7 @@ LABEL maintainer="Alexander Sidorenko <aleks.sidorenko@gmail.com>"
 
 RUN apk update \
     && apk upgrade \
-    && apk add git bash
+    && apk --no-cache add git bash curl
 
 ENV LANG en_US.UTF-8 
 ENV LANGUAGE en_US:en
