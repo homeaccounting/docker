@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Self-hosting help
+    url: https://www.homeaccounting.com/community
+    about: Discord and Telegram — the fastest way to get an install unstuck.
+  - name: Question or idea
+    url: https://github.com/orgs/homeaccounting/discussions
+    about: Discussions are where answers stay findable for the next person.
+  - name: Security vulnerability
+    url: https://github.com/homeaccounting/docker/security/advisories/new
+    about: Never report a security problem in a public issue.
+  - name: Bug in the app itself
+    url: https://github.com/homeaccounting/web/issues/new/choose
+    about: This repository is only the deployment stack. Bugs in the product belong on web or backend.

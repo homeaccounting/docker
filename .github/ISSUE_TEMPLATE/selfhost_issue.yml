@@ -1,0 +1,57 @@
+name: Self-hosting problem
+description: The stack will not start, or does not behave as the README says
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For bugs in the application itself, use the
+        [web](https://github.com/homeaccounting/web/issues) or
+        [backend](https://github.com/homeaccounting/backend/issues) repository.
+        This one is the compose stack and the edge configuration.
+
+        **Never paste your `.env`.** It contains your database password, JWT
+        secret and banking encryption key.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: state
+    attributes:
+      label: Container state
+      description: Output of `docker compose ps`.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >
+        `docker compose logs --tail=50 <service>` for whichever service is
+        unhappy. Redact anything that looks like a secret.
+      render: text
+  - type: input
+    id: profiles
+    attributes:
+      label: COMPOSE_PROFILES
+      placeholder: core,product
+    validations:
+      required: true
+  - type: input
+    id: tags
+    attributes:
+      label: Image tags
+      description: BACKEND_TAG and WEB_TAG from your .env (not the secrets).
+      placeholder: latest / latest
+  - type: textarea
+    id: env
+    attributes:
+      label: Host
+      description: OS, Docker version (`docker version --format '{{.Server.Version}}'`), architecture.
+    validations:
+      required: true

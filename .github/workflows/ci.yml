@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate the stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # A filled .env, so `docker compose config` resolves instead of warning
+      # about every unset variable. Values are throwaway.
+      - name: Fill .env from the template
+        run: |
+          sed -E 's/^([A-Z0-9_]+)=$/\1=ci-placeholder/' .env.example > .env
+          sed -i 's/^INTERNAL_DOMAIN=.*/INTERNAL_DOMAIN=ops.example.com/' .env
+
+      - name: Compose resolves cleanly (app only)
+        run: |
+          out=$(docker compose config 2>&1 >/dev/null)
+          [ -z "$out" ] || { echo "::error::docker compose config emitted warnings:"; echo "$out"; exit 1; }
+          docker compose config --services
+
+      - name: Compose resolves cleanly (with observability)
+        env:
+          COMPOSE_PROFILES: core,product,observability
+        run: |
+          out=$(docker compose config 2>&1 >/dev/null)
+          [ -z "$out" ] || { echo "::error::docker compose config emitted warnings:"; echo "$out"; exit 1; }
+          docker compose config --services
+
+      - name: Edge config assembles for every profile set
+        run: |
+          ./scripts/caddy-assemble.sh core,product
+          test -f conf.d/product.caddy
+          ./scripts/caddy-assemble.sh core,product,observability
+          test -f conf.d/product.caddy && test -f conf.d/grafana.caddy
+          # Re-assembling with fewer profiles must drop the fragments that are
+          # no longer active, or the edge keeps serving a removed vhost.
+          ./scripts/caddy-assemble.sh core,product
+          test ! -f conf.d/grafana.caddy
+
+      - name: Caddy accepts the assembled config
+        run: |
+          ./scripts/caddy-assemble.sh core,product,observability
+          docker run --rm \
+            -e PUBLIC_DOMAIN=example.com -e INTERNAL_DOMAIN=ops.example.com \
+            -e INTERNAL_ALLOW_IPS='127.0.0.1/32' -e ROOT_REDIRECT=/app/ \
+            -v "$PWD/core/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -v "$PWD/conf.d:/etc/caddy/conf.d:ro" \
+            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Documented settings match the compose file
+        run: ./scripts/check-config.sh
+
+      - name: Shell scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck scripts/*.sh
+
+  ci:
+    name: CI
+    needs: [validate]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require validate to pass
+        run: |
+          echo "validate: ${{ needs.validate.result }}"
+          test "${{ needs.validate.result }}" = "success"
