@@ -13,6 +13,8 @@ If it works here, it works there, because it is the same file.
 ## What you need
 
 - A machine with **Docker** and the Compose plugin
+- [**`just`**](https://github.com/casey/just) — the commands below are its
+  recipes; `just --list` shows them all
 - A **domain** with an A/AAAA record pointing at that machine
 - Ports **80** and **443** reachable — Caddy obtains and renews the TLS
   certificate itself
@@ -27,8 +29,7 @@ cp .env.example .env
 # Fill in the four REQUIRED values (domain, DB password, JWT secret,
 # banking token key). Each one has the command to generate it beside it.
 
-./scripts/caddy-assemble.sh core,product   # build the edge config
-docker compose up -d
+just up          # assemble the edge config, then start the stack
 ```
 
 Open `https://<your-domain>/app`. The first account you register is a normal
@@ -36,6 +37,23 @@ account — there is no separate admin.
 
 The API creates its own database schema on first start, so there is no
 migration step to run.
+
+### The recipes
+
+`just` reads `.env` and runs everything from there. `just --list` prints this
+same table:
+
+| Recipe | Does |
+| ------ | ---- |
+| `just` / `just help` | List the recipes |
+| `just up` | Assemble the edge config for `COMPOSE_PROFILES`, then start the stack |
+| `just down` | Stop the stack (volumes are kept) |
+| `just update` | Re-assemble the edge, pull images, bring it up |
+| `just status` | What this instance is running: revision, tags, profiles, containers |
+| `just pin <tag>` | Pin both app images to a tag |
+| `just restart [service]` | Restart one service, or all of them |
+| `just logs [service]` | Follow logs, optionally for one service |
+| `just backup` | Dump the database to `backup.sql.gz` |
 
 ## What runs
 
@@ -72,8 +90,7 @@ GRAFANA_ADMIN_PASSWORD=...             # openssl rand -base64 24
 then re-assemble and bring it up:
 
 ```bash
-./scripts/caddy-assemble.sh core,product,observability
-docker compose up -d
+just up          # it reads COMPOSE_PROFILES from .env
 ```
 
 Grafana lands at `https://grafana.${INTERNAL_DOMAIN}`, behind an IP allowlist
@@ -84,28 +101,25 @@ acceptable on your host, leave the observability profile off.
 ## Updating
 
 ```bash
-git pull                # a newer stack (compose, edge config, dashboards)
-./scripts/update.sh     # apply it: re-assemble the edge, pull images, bring up
+git pull         # a newer stack (compose, edge config, dashboards)
+just update      # apply it: re-assemble the edge, pull images, bring up
 ```
 
-`update.sh` is safe to re-run and never touches volumes. It re-assembles the
+`just update` is safe to re-run and never touches volumes. It re-assembles the
 edge config from whatever `COMPOSE_PROFILES` currently says, so turning
 observability off actually stops the Grafana vhost being served.
-
-For images only, `docker compose pull && docker compose up -d` is enough.
 
 To upgrade deliberately rather than track `latest`:
 
 ```bash
-./scripts/pin.sh 1a2b3c4     # pin both app images to a tag
-./scripts/update.sh          # apply it
-./scripts/status.sh          # revision, tags, profiles, container state
+just pin 1a2b3c4     # pin both app images to a tag
+just update          # apply it
+just status          # revision, tags, profiles, container state
 ```
 
 This is exactly how [homeaccounting.com](https://homeaccounting.com/app) is
 deployed — a checkout of this repository on the host, a `.env` beside it, and
-`git pull && ./scripts/update.sh`. There is no separate production deploy
-path.
+`git pull && just update`. There is no separate production deploy path.
 
 ## Backups
 
@@ -113,7 +127,7 @@ Your data is in the `postgres_data` volume. It is a finance application — back
 it up.
 
 ```bash
-docker compose exec -T postgres pg_dump -U "$DB_USER" "$DB_NAME" | gzip > backup.sql.gz
+just backup      # writes backup.sql.gz
 ```
 
 Restore into a fresh stack with `gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U "$DB_USER" "$DB_NAME"`.
