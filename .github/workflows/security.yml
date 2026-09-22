@@ -1,0 +1,52 @@
+name: Security
+
+# This repository is public and holds deployment configuration, so the mistake
+# that costs most here is a real .env being committed: it carries the database
+# password, the JWT secret and BANKING_TOKEN_ENC_KEY — which cannot be rotated
+# freely, since changing it makes stored bank tokens undecryptable.
+#
+# .gitignore is the first line of defence; these checks are the second.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: ['**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  env-files:
+    name: No secret files tracked
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # Narrower and clearer than a generic scanner for the specific error:
+      # `git add -f .env` defeats .gitignore silently.
+      - name: Only .env.example may be tracked
+        run: |
+          tracked=$(git ls-files | grep -E '(^|/)\.env' | grep -v '^\.env\.example$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::env files must never be committed to this public repo:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "only .env.example is tracked"
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — a value scan of every commit, not just HEAD
+      - name: gitleaks (git history + working tree)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest git /repo --redact --exit-code 1 --config /repo/.gitleaks.toml

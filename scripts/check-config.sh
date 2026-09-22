@@ -34,5 +34,19 @@ for v in $caddy_vars; do
   fi
 done
 
+# .gitleaks.toml allowlists .env.example so the secret scanner does not flag
+# its empty placeholders. That allowlist is only safe while they stay empty —
+# a real value pasted here would ship to a public repo unnoticed.
+echo "==> the env template carries no real values"
+secretish='^(DB_PASSWORD|JWT_SECRET|BANKING_TOKEN_ENC_KEY|GRAFANA_ADMIN_PASSWORD|LLM_API_KEY|TELEGRAM_BOT_TOKEN|[A-Z]+_CLIENT_ID|[A-Z]+_CLIENT_SECRET)='
+while IFS= read -r line; do
+  key=${line%%=*}
+  value=${line#*=}
+  if [ -n "$value" ]; then
+    echo "::error::.env.example sets a value for ${key}; sensitive keys must stay empty"
+    fail=1
+  fi
+done < <(grep -E "$secretish" .env.example || true)
+
 [ "$fail" -eq 0 ] && echo "==> config is consistent"
 exit "$fail"

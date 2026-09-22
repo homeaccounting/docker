@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+# .env.example is a template: every sensitive value in it is empty by design,
+# and `scripts/check-config.sh` fails the build if one ever stops being empty.
+# Without this, the generic-api-key rule matches the bare `KEY=` lines.
+#
+# The allowlist is only safe because of that companion check — do not widen it
+# to other paths, and do not remove the check.
+[allowlist]
+description = "Empty placeholders in the env template"
+paths = ['''^\.env\.example$''']
