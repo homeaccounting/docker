@@ -1,5 +1,6 @@
-# Convenience wrappers. Everything here is a plain docker compose command —
-# `just` is optional, the README works without it.
+# The entry point for operating the stack — the README documents these recipes.
+# Each one is a plain docker compose command or a script in scripts/, so you can
+# always read what it does and run it by hand.
 set dotenv-load := true
 
 # List available recipes
