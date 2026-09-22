@@ -1,0 +1,20 @@
+# Base edge config for the shared `core` Caddy service.
+#
+# This file declares NO sites of its own. Each active profile's site blocks are
+# imported from fragments that the deploy places into /etc/caddy/conf.d/ for the
+# currently active COMPOSE_PROFILES (e.g. product/caddy/product.caddy,
+# observability/caddy/grafana.caddy). So the served sites always track what is
+# actually deployed. A zero-match glob is a harmless warning, not an error.
+
+# Reusable access guard for internal / operator-only vhosts (*.$INTERNAL_DOMAIN).
+# Any internal fragment invokes it with `import internal_guard`; the allowlist is
+# INTERNAL_ALLOW_IPS in .env (space-separated CIDRs, v4 and/or v6). Non-matching
+# source IPs get 403 before reaching the upstream. Caddy is the direct internet
+# edge, so remote_ip is the real client IP (if you ever put a proxy/CDN in front,
+# switch to client_ip + trusted_proxies).
+(internal_guard) {
+	@external not remote_ip {$INTERNAL_ALLOW_IPS}
+	respond @external "Forbidden" 403
+}
+
+import /etc/caddy/conf.d/*.caddy

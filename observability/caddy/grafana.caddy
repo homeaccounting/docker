@@ -1,0 +1,10 @@
+# Observability edge route (profile: observability) — operator-only Grafana on
+# the internal domain. Placed into conf.d only when the `observability` profile
+# is deployed, so a product-only deploy serves no grafana vhost (no dormant
+# cert / 502). Grafana's own login is the primary access gate.
+grafana.{$INTERNAL_DOMAIN} {
+	# Operator-only: 403 any source IP not in INTERNAL_ALLOW_IPS (.env), before
+	# Grafana's own login. Defense-in-depth on top of Grafana auth.
+	import internal_guard
+	reverse_proxy grafana:3000
+}

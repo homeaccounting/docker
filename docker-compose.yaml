@@ -1,0 +1,172 @@
+# The HomeAccounting stack — service groups are selected by Docker Compose profiles.
+# Every service carries a `profiles:` tag; the default selection lives in .env as
+# COMPOSE_PROFILES=core,product.
+#
+#   core          — shared TLS edge (caddy), always up
+#   product       — the app (api, web, postgres); the default group
+#   observability — metrics/logs stack (prometheus, loki, promtail, grafana)
+#
+# Run product (default):            docker compose up -d          (reads .env)
+# Run product + observability:      COMPOSE_PROFILES=core,product,observability docker compose up -d
+services:
+  # ===================== core (shared edge) =====================
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: [core]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # Base config declares no sites; per-profile site fragments are assembled
+      # into ./conf.d by the deploy for the active COMPOSE_PROFILES.
+      - ./core/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./conf.d:/etc/caddy/conf.d:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN}
+      # Where the bare apex goes. Defaults to the app; set to a marketing site
+      # if the same domain serves one (see product/caddy/product.caddy).
+      - ROOT_REDIRECT=${ROOT_REDIRECT:-/app/}
+      - INTERNAL_DOMAIN=${INTERNAL_DOMAIN:-}
+      - INTERNAL_ALLOW_IPS=${INTERNAL_ALLOW_IPS:-127.0.0.1/32 ::1/128}
+    depends_on:
+      api:
+        condition: service_started
+      web:
+        condition: service_started
+
+  # ===================== product (the app) =====================
+  api:
+    image: ghcr.io/${GHCR_OWNER:-homeaccounting}/backend:${BACKEND_TAG:-latest}
+    restart: unless-stopped
+    profiles: [product]
+    environment:
+      - CONFIG_FILE=config/prod.yaml
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - JWT_SECRET=${JWT_SECRET}
+      # Required by the backend at startup (it exits if unset/invalid in prod),
+      # even when banking is disabled. Consumed by config/prod.yaml's
+      # banking.token_enc_key; encrypts stored bank-connection tokens.
+      - BANKING_TOKEN_ENC_KEY=${BANKING_TOKEN_ENC_KEY}
+      - API_BASE_URL=${API_BASE_URL}
+      - APP_BASE_URL=${APP_BASE_URL}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID:-}
+      - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME:-}
+      - TELEGRAM_POLLING_TIMEOUT=${TELEGRAM_POLLING_TIMEOUT:-30}
+      - EXCHANGE_RATE_PROVIDER=${EXCHANGE_RATE_PROVIDER:-nbu}
+      # LLM (natural-language transaction prompting) — opt-in. Uses a free
+      # external OpenAI-compatible endpoint (default: Groq); no self-hosted
+      # container. Set LLM_ENABLED=true + LLM_API_KEY in .env to turn on.
+      - LLM_ENABLED=${LLM_ENABLED:-false}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      - LLM_MODEL=${LLM_MODEL:-openai/gpt-oss-120b}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-20000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # One-time read-model rebuilds (comma-separated projection names, or
+      # `all`). Empty = normal checkpoint catch-up. Read at STARTUP and the
+      # container self-restarts, so leaving it set replays the whole event log
+      # on every restart — set it, deploy, confirm, clear it. See the backend's
+      # docs/deployment.md.
+      - REBUILD_READ_MODELS=${REBUILD_READ_MODELS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/${GHCR_OWNER:-homeaccounting}/web:${WEB_TAG:-latest}
+    restart: unless-stopped
+    profiles: [product]
+
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    profiles: [product]
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ===================== observability (metrics/logs) =====================
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    restart: unless-stopped
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  loki:
+    image: grafana/loki:3.0.0
+    restart: unless-stopped
+    profiles: [observability]
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./observability/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    restart: unless-stopped
+    profiles: [observability]
+    command: -config.file=/etc/promtail/promtail.yaml
+    volumes:
+      - ./observability/promtail/promtail.yaml:/etc/promtail/promtail.yaml:ro
+      # Read container stdout via the Docker socket + on-disk json-file logs.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      loki:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    restart: unless-stopped
+    profiles: [observability]
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://grafana.${INTERNAL_DOMAIN}
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+  prometheus_data:
+  loki_data:
+  grafana_data:

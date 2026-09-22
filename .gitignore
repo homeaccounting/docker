@@ -1,0 +1,5 @@
+# Runtime configuration — never commit a filled-in .env
+.env
+
+# Assembled by scripts/caddy-assemble.sh from the active profiles' fragments
+/conf.d/

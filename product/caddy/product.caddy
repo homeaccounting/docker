@@ -1,0 +1,24 @@
+# Product edge routes (profile: product) — the public app on {$PUBLIC_DOMAIN}.
+{$PUBLIC_DOMAIN} {
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	# /app → /app/ (the SPA mount point requires the trailing slash)
+	redir /app /app/ 308
+
+	# /app/<x>/ → /app/<x> (drop trailing slash within /app/ so the inner
+	# Caddy's file_server canonical-URI 308 doesn't escape the namespace).
+	@app_trailing path_regexp app_trail ^/app/(.+)/$
+	redir @app_trailing /app/{re.app_trail.1} 308
+
+	handle_path /app/* {
+		reverse_proxy web:80
+	}
+
+	# Bare apex. Self-hosting has no marketing site, so the default sends the
+	# root to the app. homeaccounting.com overrides it to the landing page
+	# (ROOT_REDIRECT=https://www.homeaccounting.com/) because that domain also
+	# serves marketing from GitHub Pages. /app and /api are unaffected either way.
+	redir / {$ROOT_REDIRECT:/app/} 301
+}

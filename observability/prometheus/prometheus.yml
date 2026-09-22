@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus scraping itself (useful for sanity / self-health panels).
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The product backend. server-infra (Spec 2) exposes Prometheus text at
+  # GET /metrics on the api container's :8080. Reachable on the internal
+  # compose network as api:8080.
+  - job_name: api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8080"]

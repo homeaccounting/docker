@@ -1,0 +1,69 @@
+{
+  "uid": "ha-logs",
+  "title": "HomeAccounting — Logs",
+  "tags": ["homeaccounting", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "description": "Per-user / per-request log view. correlationId and userId are log FIELDS (not labels), extracted with LogQL `| json`. Caveat: saga/background events lack correlationId/userId (server-infra known limitation), so they won't match a specific filter.",
+  "templating": {
+    "list": [
+      {
+        "name": "userId",
+        "label": "userId",
+        "type": "textbox",
+        "query": ".*",
+        "current": { "text": ".*", "value": ".*" }
+      },
+      {
+        "name": "correlationId",
+        "label": "correlationId",
+        "type": "textbox",
+        "query": ".*",
+        "current": { "text": ".*", "value": ".*" }
+      },
+      {
+        "name": "level",
+        "label": "level",
+        "type": "custom",
+        "query": ".*,debug,info,warn,error",
+        "includeAll": false,
+        "current": { "text": ".*", "value": ".*" },
+        "options": [
+          { "text": ".*", "value": ".*", "selected": true },
+          { "text": "debug", "value": "debug", "selected": false },
+          { "text": "info", "value": "info", "selected": false },
+          { "text": "warn", "value": "warn", "selected": false },
+          { "text": "error", "value": "error", "selected": false }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "api logs (filter by userId / correlationId / level)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 20, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{job=\"api\", level=~\"$level\"} | json | userId=~\"$userId\" | correlationId=~\"$correlationId\""
+        }
+      ]
+    }
+  ]
+}
