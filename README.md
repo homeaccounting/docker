@@ -92,9 +92,15 @@ git pull                # a newer stack (compose, edge config, dashboards)
 edge config from whatever `COMPOSE_PROFILES` currently says, so turning
 observability off actually stops the Grafana vhost being served.
 
-For images only, `docker compose pull && docker compose up -d` is enough. Pin
-`BACKEND_TAG` and `WEB_TAG` in `.env` if you would rather upgrade deliberately
-than track `latest`.
+For images only, `docker compose pull && docker compose up -d` is enough.
+
+To upgrade deliberately rather than track `latest`:
+
+```bash
+./scripts/pin.sh 1a2b3c4     # pin both app images to a tag
+./scripts/update.sh          # apply it
+./scripts/status.sh          # revision, tags, profiles, container state
+```
 
 This is exactly how [homeaccounting.com](https://homeaccounting.com/app) is
 deployed — a checkout of this repository on the host, a `.env` beside it, and

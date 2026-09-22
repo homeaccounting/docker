@@ -27,6 +27,14 @@ update:
 restart service="":
     docker compose restart {{ service }}
 
+# What this instance is running: revision, tags, profiles, containers
+status:
+    ./scripts/status.sh
+
+# Pin the app images to a tag: `just pin 1a2b3c4` (then `just update`)
+pin tag:
+    ./scripts/pin.sh {{ tag }}
+
 # Dump the database to backup.sql.gz
 backup:
     docker compose exec -T postgres pg_dump -U "${DB_USER:-accounting}" "${DB_NAME:-accounting}" | gzip > backup.sql.gz
