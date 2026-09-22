@@ -84,12 +84,22 @@ acceptable on your host, leave the observability profile off.
 ## Updating
 
 ```bash
-docker compose pull
-docker compose up -d
+git pull                # a newer stack (compose, edge config, dashboards)
+./scripts/update.sh     # apply it: re-assemble the edge, pull images, bring up
 ```
 
-Pin `BACKEND_TAG` and `WEB_TAG` in `.env` if you would rather upgrade
-deliberately than track `latest`.
+`update.sh` is safe to re-run and never touches volumes. It re-assembles the
+edge config from whatever `COMPOSE_PROFILES` currently says, so turning
+observability off actually stops the Grafana vhost being served.
+
+For images only, `docker compose pull && docker compose up -d` is enough. Pin
+`BACKEND_TAG` and `WEB_TAG` in `.env` if you would rather upgrade deliberately
+than track `latest`.
+
+This is exactly how [homeaccounting.com](https://homeaccounting.com/app) is
+deployed — a checkout of this repository on the host, a `.env` beside it, and
+`git pull && ./scripts/update.sh`. There is no separate production deploy
+path.
 
 ## Backups
 

@@ -19,10 +19,13 @@ down:
 logs service="":
     docker compose logs -f {{ service }}
 
-# Pull newer images and restart
+# Apply the current stack: re-assemble the edge, pull images, bring it up
 update:
-    docker compose pull
-    @just up
+    ./scripts/update.sh
+
+# Restart one service, or all of them: `just restart api`
+restart service="":
+    docker compose restart {{ service }}
 
 # Dump the database to backup.sql.gz
 backup:
