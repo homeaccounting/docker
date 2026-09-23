@@ -68,6 +68,28 @@ same table:
 | `postgres` | `db`            | Event store and read models — or bring your own      |
 | `prometheus`, `loki`, `promtail`, `grafana` | `observability` | Metrics, logs, dashboards — opt-in |
 
+### What is in the checkout
+
+```
+docker-compose.yaml         every service, each tagged with a profile
+.env.example                every setting there is — copy it to .env
+core/caddy/Caddyfile        shared edge: TLS, the operator IP guard
+product/caddy/*.caddy       public routing: /api -> api, /app -> web
+observability/              prometheus, loki, promtail, grafana + dashboards
+conf.d/                     GENERATED — the edge fragments for your profiles
+scripts/
+  caddy-assemble.sh         builds conf.d/ from the active profiles
+  update.sh                 what `just update` runs
+  status.sh  pin.sh         what `just status` / `just pin` run
+  check-config.sh           CI: compose, the Caddy configs and .env.example agree
+  ci-env.sh                 CI: a throwaway .env with well-formed values
+justfile                    the recipes above
+```
+
+`conf.d/` is rebuilt on every `just up` / `just update` and is gitignored.
+Nothing else in the checkout is generated, and nothing needs editing except
+`.env`.
+
 ### Why the edge is not optional
 
 The web image is built with a **same-origin** API base, so the app calls `/api`
@@ -134,6 +156,32 @@ Grafana lands at `https://grafana.${INTERNAL_DOMAIN}`, behind an IP allowlist
 that is **fail-closed by default** (loopback only). Note that `promtail` mounts
 the Docker socket read-only to collect container logs; if that is not
 acceptable on your host, leave the observability profile off.
+
+## Configuration
+
+`.env` is the only file you edit. Every setting the stack reads is listed and
+explained in [`.env.example`](.env.example), and CI fails if the compose file
+ever reads a variable that is not documented there — so the template is the
+complete list, not a sample of it.
+
+### Keeping `.env` out of the clear
+
+It holds the database password, the JWT secret and `BANKING_TOKEN_ENC_KEY`, so
+the file itself is the thing worth protecting:
+
+- It is gitignored here. If you keep your own fork or a config repo, keep it
+  that way — `git add -f` defeats the ignore silently, which is why CI also
+  fails on any tracked `.env`.
+- `chmod 600 .env`. Compose reads it as the invoking user; nothing else needs
+  to.
+- If you would rather not have a plaintext copy at rest, keep the values in a
+  secret store and render the file at deploy time. With
+  [sops](https://github.com/getsops/sops) that is an encrypted YAML file in
+  your own repository and `sops -d --output-type dotenv secrets.yaml > .env`
+  before `just update`. Any store works — the stack only ever reads `.env`.
+- `BANKING_TOKEN_ENC_KEY` cannot be rotated once banking is in use: it decrypts
+  stored bank tokens, so changing it makes them unreadable. Treat a leak of
+  that one value as needing a re-encryption migration rather than a new key.
 
 ## Updating
 
