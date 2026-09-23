@@ -31,11 +31,24 @@ fatal for someone following the README.
 No cluster required:
 
 ```bash
-cp .env.example .env            # dummy values are fine for validation
-docker compose config           # must resolve with no warnings
-./scripts/caddy-assemble.sh core,product,observability
-COMPOSE_PROFILES=core,product,observability docker compose config --services
+./scripts/ci-env.sh             # a throwaway .env, same as CI builds
+./scripts/check-config.sh       # compose, Caddy configs and .env.example agree
+
+# every documented profile combination must be a valid project
+for p in core core,product,db core,product core,product,db,observability; do
+  COMPOSE_PROFILES=$p docker compose config --services
+done
+
+./scripts/caddy-assemble.sh core,product,db,observability
 ```
+
+Use `./scripts/ci-env.sh` rather than filling `.env.example` with a constant:
+three of the values are parsed by the API at startup and make it exit if they
+are malformed, so dummy values turn "the stack is broken" into "CI filled the
+template with nonsense".
+
+CI additionally pulls the images anonymously and boots the stack, which is the
+check that a stranger's first five minutes still work.
 
 If you can, run it for real against a spare domain before proposing an edge
 change — Caddy configuration errors tend to surface only on a live certificate
