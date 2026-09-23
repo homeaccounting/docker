@@ -12,7 +12,10 @@ If it works here, it works there, because it is the same file.
 
 ## What you need
 
-- A machine with **Docker** and the Compose plugin
+- An **x86-64** machine with **Docker** and the Compose plugin. The published
+  images are `linux/amd64` only for now, so arm64 hosts — Apple Silicon,
+  Raspberry Pi, Hetzner CAX, Graviton, Ampere — cannot run them yet without
+  emulation (`DOCKER_DEFAULT_PLATFORM=linux/amd64`, which is slow)
 - [**`just`**](https://github.com/casey/just) — the commands below are its
   recipes; `just --list` shows them all
 - A **domain** with an A/AAAA record pointing at that machine
@@ -62,7 +65,7 @@ same table:
 | `caddy`    | `core`          | TLS edge. Routes `/api` and `/app` on one hostname  |
 | `api`      | `product`       | The backend                                          |
 | `web`      | `product`       | The single-page app                                  |
-| `postgres` | `product`       | Event store and read models                          |
+| `postgres` | `db`            | Event store and read models — or bring your own      |
 | `prometheus`, `loki`, `promtail`, `grafana` | `observability` | Metrics, logs, dashboards — opt-in |
 
 ### Why the edge is not optional
@@ -73,9 +76,43 @@ something has to put them on one hostname, and that is what `caddy` does here.
 If you already run your own reverse proxy, point it at the `web` and `api`
 containers and reproduce the routing in `product/caddy/product.caddy`.
 
+### Behind an existing proxy
+
+If a cloud load balancer, a CDN or your own reverse proxy terminates TLS in
+front of this stack, tell Caddy which peers may speak for the client:
+
+```bash
+# .env
+TRUSTED_PROXIES=10.0.0.0/8        # space-separated CIDRs of those proxies
+```
+
+Without it every request appears to come from the proxy, which silently breaks
+the operator IP allowlist on `*.${INTERNAL_DOMAIN}`. The default is a
+documentation CIDR that matches nothing, so a directly-exposed stack — the
+normal case — needs no setting and trusts no inbound `X-Forwarded-For`.
+
 ## Profiles
 
-`COMPOSE_PROFILES` in `.env` decides what runs. The default is `core,product`.
+`COMPOSE_PROFILES` in `.env` decides what runs. The default is
+`core,product,db`.
+
+### Using a managed database
+
+Drop `db` and point the stack at an external Postgres. Nothing else changes —
+the API creates its own schema there on first start.
+
+```bash
+# .env
+COMPOSE_PROFILES=core,product
+DB_HOST=db.internal.example.com
+DB_PORT=5432
+DB_USER=accounting
+DB_PASSWORD=...
+DB_NAME=accounting
+```
+
+`just backup` expects the bundled container, so use your provider's backups
+(or plain `pg_dump`) instead.
 
 To add dashboards (Grafana, Prometheus, Loki):
 
@@ -129,6 +166,9 @@ it up.
 ```bash
 just backup      # writes backup.sql.gz
 ```
+
+That file is a plaintext dump of every transaction in the instance. It is
+gitignored here — keep it that way, and move it somewhere off this machine.
 
 Restore into a fresh stack with `gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U "$DB_USER" "$DB_NAME"`.
 

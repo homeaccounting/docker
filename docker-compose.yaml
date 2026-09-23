@@ -2,12 +2,14 @@
 # Every service carries a `profiles:` tag; the default selection lives in .env as
 # COMPOSE_PROFILES=core,product.
 #
-#   core          — shared TLS edge (caddy), always up
-#   product       — the app (api, web, postgres); the default group
+#   core          — shared TLS edge (caddy)
+#   product       — the app (api, web)
+#   db            — the bundled PostgreSQL; leave it out to use a managed one
 #   observability — metrics/logs stack (prometheus, loki, promtail, grafana)
 #
-# Run product (default):            docker compose up -d          (reads .env)
-# Run product + observability:      COMPOSE_PROFILES=core,product,observability docker compose up -d
+# Always start via `just up` / `just update`: they assemble the Caddy conf.d
+# fragments for the active profiles first. A bare `docker compose up -d` skips
+# that step and the edge comes up serving no sites at all.
 services:
   # ===================== core (shared edge) =====================
   caddy:
@@ -32,11 +34,19 @@ services:
       - ROOT_REDIRECT=${ROOT_REDIRECT:-/app/}
       - INTERNAL_DOMAIN=${INTERNAL_DOMAIN:-}
       - INTERNAL_ALLOW_IPS=${INTERNAL_ALLOW_IPS:-127.0.0.1/32 ::1/128}
+      # RFC 5737 documentation CIDR = "trust nothing in front of us". Empty is
+      # not a valid value for Caddy's trusted_proxies, hence a never-matching
+      # default rather than a blank one.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-192.0.2.1/32}
+    # `required: false` so the edge can come up with the product profile off
+    # (and so `COMPOSE_PROFILES=core` alone is a valid project).
     depends_on:
       api:
         condition: service_started
+        required: false
       web:
         condition: service_started
+        required: false
 
   # ===================== product (the app) =====================
   api:
@@ -45,8 +55,10 @@ services:
     profiles: [product]
     environment:
       - CONFIG_FILE=config/prod.yaml
-      - DB_HOST=postgres
-      - DB_PORT=5432
+      # Default to the bundled `db` profile. Point these at a managed Postgres
+      # and drop `db` from COMPOSE_PROFILES to run without a database container.
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
@@ -82,19 +94,23 @@ services:
       # on every restart — set it, deploy, confirm, clear it. See the backend's
       # docs/deployment.md.
       - REBUILD_READ_MODELS=${REBUILD_READ_MODELS:-}
+    # Not required: an external DB_HOST means no postgres service in the project.
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
 
   web:
     image: ghcr.io/${GHCR_OWNER:-homeaccounting}/web:${WEB_TAG:-latest}
     restart: unless-stopped
     profiles: [product]
 
+  # Bundled database. Omit the `db` profile and set DB_HOST/DB_PORT to use a
+  # managed Postgres instead; nothing else in the stack changes.
   postgres:
     image: postgres:15
     restart: unless-stopped
-    profiles: [product]
+    profiles: [db]
     environment:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}

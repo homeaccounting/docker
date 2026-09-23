@@ -6,14 +6,25 @@
 # observability/caddy/grafana.caddy). So the served sites always track what is
 # actually deployed. A zero-match glob is a harmless warning, not an error.
 
+# Which upstream proxies may speak for the client. Defaults to a documentation
+# CIDR (RFC 5737) that no real peer ever matches, so out of the box Caddy is
+# the direct internet edge and ignores any inbound X-Forwarded-For. Set
+# TRUSTED_PROXIES in .env only when a load balancer or CDN really is in front;
+# that is what makes `client_ip` below resolve to the true client address.
+{
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES}
+	}
+}
+
 # Reusable access guard for internal / operator-only vhosts (*.$INTERNAL_DOMAIN).
 # Any internal fragment invokes it with `import internal_guard`; the allowlist is
 # INTERNAL_ALLOW_IPS in .env (space-separated CIDRs, v4 and/or v6). Non-matching
-# source IPs get 403 before reaching the upstream. Caddy is the direct internet
-# edge, so remote_ip is the real client IP (if you ever put a proxy/CDN in front,
-# switch to client_ip + trusted_proxies).
+# source IPs get 403 before reaching the upstream. `client_ip` is the client
+# address after TRUSTED_PROXIES is applied — identical to the socket peer when
+# nothing is in front, and still correct when something is.
 (internal_guard) {
-	@external not remote_ip {$INTERNAL_ALLOW_IPS}
+	@external not client_ip {$INTERNAL_ALLOW_IPS}
 	respond @external "Forbidden" 403
 }
 

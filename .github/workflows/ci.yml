@@ -19,31 +19,48 @@ jobs:
       - uses: actions/checkout@v4
 
       # A filled .env, so `docker compose config` resolves instead of warning
-      # about every unset variable. Values are throwaway.
+      # about every unset variable. Values are throwaway, but the three the API
+      # actually parses have to be well-formed or it exits at startup — which
+      # the smoke job below would then report as a broken stack.
       - name: Fill .env from the template
-        run: |
-          sed -E 's/^([A-Z0-9_]+)=$/\1=ci-placeholder/' .env.example > .env
-          sed -i 's/^INTERNAL_DOMAIN=.*/INTERNAL_DOMAIN=ops.example.com/' .env
+        run: ./scripts/ci-env.sh
 
-      - name: Compose resolves cleanly (app only)
+      # Every documented profile combination must be a valid project. The
+      # failure this catches is a `depends_on` reaching into a profile that is
+      # switched off, which makes compose refuse the whole file.
+      - name: Every profile combination resolves cleanly
         run: |
-          out=$(docker compose config 2>&1 >/dev/null)
-          [ -z "$out" ] || { echo "::error::docker compose config emitted warnings:"; echo "$out"; exit 1; }
-          docker compose config --services
+          for profiles in \
+            core \
+            core,product,db \
+            core,product \
+            core,product,db,observability
+          do
+            echo "==> COMPOSE_PROFILES=$profiles"
+            out=$(COMPOSE_PROFILES="$profiles" docker compose config 2>&1 >/dev/null)
+            [ -z "$out" ] || { echo "::error::compose config emitted warnings for $profiles:"; echo "$out"; exit 1; }
+            COMPOSE_PROFILES="$profiles" docker compose config --services | sed 's/^/    /'
+          done
 
-      - name: Compose resolves cleanly (with observability)
+      # `core,product` without `db` is the managed-database setup: no postgres
+      # service, and the api pointed at an external host.
+      - name: A managed database needs no postgres service
         env:
-          COMPOSE_PROFILES: core,product,observability
+          COMPOSE_PROFILES: core,product
         run: |
-          out=$(docker compose config 2>&1 >/dev/null)
-          [ -z "$out" ] || { echo "::error::docker compose config emitted warnings:"; echo "$out"; exit 1; }
-          docker compose config --services
+          if docker compose config --services | grep -qx postgres; then
+            echo "::error::postgres is still in the project without the db profile"
+            exit 1
+          fi
+          DB_HOST=db.example.com docker compose config \
+            | grep -q 'DB_HOST: db.example.com' \
+            || { echo "::error::DB_HOST is not overridable — the stack cannot use a managed database"; exit 1; }
 
       - name: Edge config assembles for every profile set
         run: |
-          ./scripts/caddy-assemble.sh core,product
+          ./scripts/caddy-assemble.sh core,product,db
           test -f conf.d/product.caddy
-          ./scripts/caddy-assemble.sh core,product,observability
+          ./scripts/caddy-assemble.sh core,product,db,observability
           test -f conf.d/product.caddy && test -f conf.d/grafana.caddy
           # Re-assembling with fewer profiles must drop the fragments that are
           # no longer active, or the edge keeps serving a removed vhost.
@@ -56,6 +73,7 @@ jobs:
           docker run --rm \
             -e PUBLIC_DOMAIN=example.com -e INTERNAL_DOMAIN=ops.example.com \
             -e INTERNAL_ALLOW_IPS='127.0.0.1/32' -e ROOT_REDIRECT=/app/ \
+            -e TRUSTED_PROXIES='192.0.2.1/32' \
             -v "$PWD/core/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             -v "$PWD/conf.d:/etc/caddy/conf.d:ro" \
             caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
@@ -68,13 +86,81 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck scripts/*.sh
 
+  # The check that a stranger's first five minutes actually work. A runner has
+  # never authenticated to ghcr.io, so this also proves the images are public.
+  smoke:
+    name: The stack comes up
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fill .env from the template
+        run: ./scripts/ci-env.sh
+
+      # Caddy is left out: it would try to obtain a certificate for a domain
+      # that does not resolve here. The services it fronts are published on
+      # loopback instead so this job can talk to them directly.
+      - name: Publish the app ports on loopback
+        run: |
+          cat > compose.override.yaml <<'YAML'
+          services:
+            web:
+              ports: ["127.0.0.1:8080:80"]
+            api:
+              ports: ["127.0.0.1:8081:8080"]
+          YAML
+
+      - name: Pull the images anonymously
+        env:
+          COMPOSE_PROFILES: product,db
+        run: docker compose pull --quiet
+
+      - name: Start
+        env:
+          COMPOSE_PROFILES: product,db
+        run: docker compose up -d --wait --wait-timeout 180
+
+      - name: The web app is served
+        run: |
+          curl -fsS --retry 10 --retry-delay 3 --retry-all-errors http://127.0.0.1:8080/ \
+            | grep -qi '<!doctype html' \
+            || { echo "::error::the web container did not serve the SPA"; exit 1; }
+
+      - name: The API answers
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --retry 10 --retry-delay 3 --retry-all-errors http://127.0.0.1:8081/)
+          echo "api responded $code"
+          [ "$code" != "000" ] || { echo "::error::the api is not listening"; exit 1; }
+
+      # The API validates its configuration at startup and exits when it is
+      # wrong, and `restart: unless-stopped` hides that as a restart loop.
+      - name: The API stayed up
+        run: |
+          sleep 20
+          state=$(docker compose ps --format '{{.State}}' api)
+          echo "api state: $state"
+          [ "$state" = "running" ] || { echo "::error::the api is not running ($state)"; exit 1; }
+          restarts=$(docker inspect -f '{{.RestartCount}}' "$(docker compose ps -q api)")
+          [ "$restarts" = "0" ] || { echo "::error::the api restarted $restarts time(s)"; exit 1; }
+
+      - name: Logs
+        if: always()
+        run: docker compose logs --tail=100
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v
+
   ci:
     name: CI
-    needs: [validate]
+    needs: [validate, smoke]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Require validate to pass
         run: |
           echo "validate: ${{ needs.validate.result }}"
+          echo "smoke: ${{ needs.smoke.result }}"
           test "${{ needs.validate.result }}" = "success"
+          test "${{ needs.smoke.result }}" = "success"

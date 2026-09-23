@@ -3,3 +3,6 @@
 
 # Assembled by scripts/caddy-assemble.sh from the active profiles' fragments
 /conf.d/
+
+# `just backup` writes here — a plaintext dump of the whole ledger
+backup.sql.gz
