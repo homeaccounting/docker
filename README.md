@@ -12,10 +12,9 @@ If it works here, it works there, because it is the same file.
 
 ## What you need
 
-- An **x86-64** machine with **Docker** and the Compose plugin. The published
-  images are `linux/amd64` only for now, so arm64 hosts — Apple Silicon,
-  Raspberry Pi, Hetzner CAX, Graviton, Ampere — cannot run them yet without
-  emulation (`DOCKER_DEFAULT_PLATFORM=linux/amd64`, which is slow)
+- A machine with **Docker** and the Compose plugin, on **x86-64 or arm64** —
+  Apple Silicon, Raspberry Pi, Hetzner CAX, Graviton and Ampere all run the
+  published images natively, no emulation and no platform override
 - [**`just`**](https://github.com/casey/just) — the commands below are its
   recipes; `just --list` shows them all
 - A **domain** with an A/AAAA record pointing at that machine
