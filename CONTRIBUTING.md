@@ -89,3 +89,10 @@ go to `conduct@homeaccounting.com`.
 ## Licence
 
 AGPL-3.0. By contributing you agree your work is licensed under it.
+
+## Trademarks
+
+The AGPL covers the code, not the name. Run this stack unmodified and call it
+HomeAccounting; publish a **modified** stack, or operate it as a hosted service
+for other people, and you must rebrand. Full policy:
+<https://www.homeaccounting.com/trademark>.
