@@ -227,9 +227,10 @@ All off unless configured, all in `.env`:
   `${APP_BASE_URL}/app/auth/oauth/<provider>/callback` with each provider
 - **Telegram capture** — text a bot and it records transactions; create the bot
   with [@BotFather](https://t.me/BotFather)
-- **Natural-language entry** — "coffee 45, taxi 200" becomes transactions. Calls
-  an external OpenAI-compatible endpoint (a free Groq key works); nothing is
-  self-hosted, and it stays off until you set `LLM_ENABLED=true`
+- **Natural-language entry** — "coffee 45, taxi 200" becomes transactions, in
+  the web, mobile and Telegram apps. Turns on once you set `LLM_API_KEY` (a free
+  Groq key works). Prompt text goes to that external OpenAI-compatible
+  endpoint; nothing is self-hosted. `LLM_ENABLED=false` turns it off again
 
 ## Help and reporting
 
